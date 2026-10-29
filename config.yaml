@@ -1,0 +1,102 @@
+# co2-naoh-capture configuration
+# Every design choice and physical constant the model uses lives here.
+# Units are SI unless the key name says otherwise.
+
+design_basis:
+  # Flue gas from a natural-gas-fired industrial boiler, after a direct-contact
+  # quench cooler (so it enters the absorber cooled and water-saturated).
+  flue_gas_nm3_per_h: 10000         # normal m3/h at 0 degC, 101.325 kPa (wet basis)
+  composition_mol_frac:             # wet basis, after quench at 40 degC
+    CO2: 0.080
+    H2O: 0.073                      # saturation at 40 degC and ~105 kPa
+    O2: 0.035
+    N2: 0.812
+  gas_temperature_C: 40.0
+  absorber_pressure_kPa: 105.0      # slightly above atmospheric (fan discharge)
+  capture_fraction: 0.90            # share of inlet CO2 removed
+
+solvent:
+  # Lean liquor entering the absorber: NaOH plus recycled Na2CO3 from the crystallizer
+  lean_naoh_molality: 2.0           # mol NaOH per kg water
+  per_pass_naoh_conversion: 0.50    # share of lean NaOH consumed in one pass (sets circulation rate)
+  absorber_liquid_temperature_C: 40.0
+  liquid_density: 1100.0            # kg/m3, approx. for ~2 mol/kg NaOH + Na2CO3
+  viscosity_ratio_to_water: 1.45    # mu_solution / mu_water, approx. for this ionic strength
+  surface_tension: 0.076            # N/m (electrolytes raise it slightly above water)
+  makeup_naoh_wt_frac: 0.50         # makeup arrives as 50 wt% caustic soda
+
+gas_properties:
+  viscosity: 1.80e-5                # Pa s, flue gas at 40 degC
+  co2_diffusivity: 1.65e-5          # m2/s, CO2 in flue gas at 40 degC
+
+packing:
+  # 50 mm metal (stainless) Pall rings: compatible with hot caustic
+  name: "50 mm metal Pall rings"
+  specific_area: 112.6              # a_p, m2/m3
+  nominal_size: 0.050               # d_p, m
+  critical_surface_tension: 0.075   # sigma_c, N/m (steel)
+  design_f_factor: 2.2              # F = u_G * sqrt(rho_G), Pa^0.5 (about 65-70% of flood for this packing)
+  min_wetting_rate: 0.08            # m3/(m h), Morris & Jackson guideline; times a_p gives m3/(m2 h)
+  onda_kg_constant: 5.23            # Onda kG constant for packing > 15 mm
+  design_margin: 0.20               # extra packed height on top of the calculated value (20%)
+  integration_points: 2000          # grid points along the column for the height integral
+
+kinetics:
+  # Pinsent et al. (1956): log10 k_inf [L/(mol s)] = A - B / T
+  pinsent_A: 13.635
+  pinsent_B: 2895.0
+  # Pohorecki & Moniuk (1988) ionic-strength correction for NaOH:
+  # log10(k / k_inf) = c1 * I - c2 * I^2   (I in mol/L)
+  ionic_c1: 0.221
+  ionic_c2: 0.016
+  oh_to_co2_diffusivity_ratio: 1.5  # D_OH / D_CO2, used only for the enhancement-factor check
+
+solubility:
+  # Henry's constant of CO2 in water, Versteeg & van Swaaij (1988):
+  # H = A * exp(-B / T)  [Pa m3/mol]
+  henry_A: 2.82e+6
+  henry_B: 2044.0
+  # Diffusivity of CO2 in water, Versteeg & van Swaaij (1988): D = A * exp(-B / T) [m2/s]
+  diff_A: 2.35e-6
+  diff_B: 2119.0
+  diffusivity_viscosity_exponent: 0.8   # D_sol = D_water * (mu_water / mu_sol)^0.8
+  # Schumpe salting-out model, Weisenberger & Schumpe (1996): ion and gas parameters, m3/kmol
+  ion_h:
+    Na+: 0.1143
+    OH-: 0.0839
+    CO3--: 0.1423
+  gas_h0: -0.0172
+  gas_hT: -0.000338                 # per K, relative to 298.15 K
+
+crystallizer:
+  # Cooling crystallization of sodium carbonate decahydrate (Na2CO3.10H2O)
+  temperature_C: 5.0
+  # Solubility of Na2CO3 in WATER (g Na2CO3 per 100 g water), decahydrate branch.
+  # NaOH in the liquor lowers this (common Na+ ion), so using pure-water values
+  # overstates how much carbonate stays dissolved: a conservative choice.
+  solubility_table_C: [0, 10, 20, 30]
+  solubility_table_g_per_100g: [7.0, 12.5, 21.5, 38.8]
+  cake_moisture: 0.10               # kg mother liquor held per kg wet-free crystals
+  heat_of_crystallization: 67.9e+3   # J/mol released when Na2CO3.10H2O crystallizes
+  liquor_cp: 3800.0                 # J/(kg K), approx. for the liquor
+  exchanger_approach_K: 5.0         # lean/rich cross exchanger approach temperature
+
+thermo:
+  heat_of_reaction: -109.5e+3        # J/mol CO2, CO2(g) + 2 NaOH(aq) -> Na2CO3(aq) + H2O(l), from formation enthalpies
+  max_adiabatic_rise_K: 10.0        # flag if the absorber liquid would heat up more than this without cooling
+
+sensitivity:
+  capture_fraction: [0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.97]
+  lean_naoh_molality: [0.5, 1.0, 1.5, 2.0, 3.0, 4.0]
+  absorber_liquid_temperature_C: [25, 30, 35, 40, 45, 50]
+  per_pass_naoh_conversion: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+  crystallizer_temperature_C: [0, 5, 10, 15, 20]
+
+report:
+  title: "CO2 capture with aqueous NaOH and sodium carbonate recovery: process model and design"
+  file: co2_naoh_capture_report.html
+  min_hatta_for_fast_regime: 3.0    # Ha above this = fast pseudo-first-order regime
+  min_einf_over_ha: 5.0             # E_inf / Ha above this = pseudo-first-order assumption holds
+
+outputs:
+  dir: outputs

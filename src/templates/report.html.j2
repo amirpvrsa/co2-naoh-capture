@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CO2 NaOH Capture</title>
+<style>
+:root { --bg:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --rule:#e4e3df; --panel:#f3f2ef; --accent:#2a78d6; --warn-bg:#fdf3e7; --warn-rule:#eda100; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --rule:#3a3936; --panel:#242422; --accent:#3987e5; --warn-bg:#2e2617; --warn-rule:#c98500; } }
+:root[data-theme="dark"] { --bg:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --rule:#3a3936; --panel:#242422; --accent:#3987e5; --warn-bg:#2e2617; --warn-rule:#c98500; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 -apple-system,"Segoe UI",Inter,Roboto,sans-serif; }
+main { max-width:980px; margin:0 auto; padding:32px 16px 80px; }
+h1 { font-size:26px; line-height:1.25; margin:0 0 6px; }
+h2 { font-size:20px; margin:44px 0 8px; padding-top:14px; border-top:2px solid var(--ink); }
+h3 { font-size:16px; margin:26px 0 6px; }
+p, li { max-width:74ch; }
+.meta, .note { color:var(--ink-2); font-size:13px; }
+.box { background:var(--warn-bg); border-left:4px solid var(--warn-rule); padding:12px 16px; margin:20px 0; border-radius:4px; }
+.kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:16px 0; }
+.kpi { background:var(--panel); border-radius:6px; padding:12px 14px; }
+.kpi .v { font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; }
+.kpi .l { font-size:12px; color:var(--ink-2); }
+.tbl { overflow-x:auto; margin:12px 0; }
+table { border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; min-width:100%; }
+th, td { padding:6px 10px; border-bottom:1px solid var(--rule); text-align:right; white-space:nowrap; }
+th { color:var(--ink-2); font-weight:600; border-bottom:1px solid var(--ink-2); }
+th:first-child, td:first-child, td.l, th.l { text-align:left; }
+td.l { white-space:normal; }
+.eq { font-family:"Cambria Math","STIX Two Math",Georgia,serif; background:var(--panel); padding:10px 14px; border-radius:4px; margin:10px 0; }
+.eq .where { font-family:inherit; font-size:13px; color:var(--ink-2); margin-top:6px; font-family:-apple-system,"Segoe UI",Inter,sans-serif; }
+figure { margin:16px 0; }
+figure img { width:100%; height:auto; background:#fcfcfb; border-radius:4px; }
+.grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
+figcaption { font-size:13px; color:var(--ink-2); margin-top:6px; }
+</style>
+</head>
+<body>
+<main>
+<h1>{{ title }}</h1>
+<div class="meta">Steady-state process model built in Python from first principles · generated {{ generated }} by <code>run.py</code>. Every number on this page is computed by the model; none is typed by hand.</div>
+
+<div class="box">
+<b>What this model is, and is not.</b>
+<ul>
+<li>It is a <b>first-principles steady-state model</b> written in Python: mass and energy balances, Pinsent kinetics, Onda mass-transfer correlations and a rate-based height integral. It is <b>not</b> an Aspen Plus simulation and uses no electrolyte equilibrium package (such as ELECNRTL).</li>
+<li>The absorber liquid is treated as held at {{ cfg.solvent.absorber_liquid_temperature_C }} °C (a pump-around cooler removes the reaction heat). Water exchange between gas and liquid is neglected.</li>
+<li>Na<sub>2</sub>CO<sub>3</sub> solubility uses <b>pure-water</b> data. NaOH in the liquor lowers it, so the model overstates the carbonate that stays dissolved: a conservative choice for absorber sizing.</li>
+<li>Liquor density, viscosity and surface tension are fixed estimates (in <code>config.yaml</code>), not functions of composition. Results at compositions far from the base case are less reliable.</li>
+<li>The design basis is a representative natural-gas boiler, not a specific plant.</li>
+</ul>
+</div>
+
+<h2>1. Design basis</h2>
+<div class="tbl"><table>
+<tr><th>Item</th><th>Value</th></tr>
+<tr><td>Flue gas (wet)</td><td>{{ num(cfg.design_basis.flue_gas_nm3_per_h, 0) }} Nm³/h = {{ num(lp.gas.total) }} mol/s</td></tr>
+<tr><td>Composition (mol %)</td><td>{% for k, v in cfg.design_basis.composition_mol_frac.items() %}{{ k }} {{ num(v * 100, 1) }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+<tr><td>Gas temperature / pressure</td><td>{{ cfg.design_basis.gas_temperature_C }} °C / {{ cfg.design_basis.absorber_pressure_kPa }} kPa</td></tr>
+<tr><td>CO₂ capture target</td><td>{{ pct(cfg.design_basis.capture_fraction, 0) }}</td></tr>
+<tr><td>Lean liquor</td><td>{{ cfg.solvent.lean_naoh_molality }} mol NaOH per kg water, {{ pct(cfg.solvent.per_pass_naoh_conversion, 0) }} NaOH conversion per pass</td></tr>
+<tr><td>Packing</td><td>{{ cfg.packing.name }}, a<sub>p</sub> = {{ cfg.packing.specific_area }} m²/m³</td></tr>
+<tr><td>Crystallizer</td><td>cooling to {{ cfg.crystallizer.temperature_C }} °C, product Na<sub>2</sub>CO<sub>3</sub>·10H<sub>2</sub>O</td></tr>
+</table></div>
+
+<h2>2. Process and flowsheet</h2>
+<p>Flue gas rises through a packed column against a falling NaOH liquor. CO₂ reacts with hydroxide: CO₂ + 2 NaOH → Na₂CO₃ + H₂O. The carbonate-rich liquor is cooled, first against the returning lean liquor and then in a chiller, so sodium carbonate decahydrate crystallizes. A filter separates the crystals; the mother liquor is topped up with 50 wt% caustic and water and returned to the absorber.</p>
+<figure><img src="{{ img.pfd }}" alt="Process flow diagram"></figure>
+
+<h3>Stream table (kg/h)</h3>
+<div class="tbl"><table>
+<tr><th>Stream</th><th class="l">Description</th><th>T (°C)</th><th>CO₂</th><th>N₂</th><th>O₂</th><th>H₂O</th><th>NaOH</th><th>Na₂CO₃</th><th>Na₂CO₃·10H₂O</th><th>Total</th></tr>
+{% for _, r in st.iterrows() %}
+<tr><td>{{ r.stream }}</td><td class="l">{{ r.description }}</td><td>{{ num(r.T_C, 1) }}</td><td>{{ num(r.CO2, 0) }}</td><td>{{ num(r.N2, 0) }}</td><td>{{ num(r.O2, 0) }}</td><td>{{ num(r.H2O, 0) }}</td><td>{{ num(r.NaOH, 0) }}</td><td>{{ num(r.Na2CO3, 0) }}</td><td>{{ num(r["Na2CO3.10H2O"], 0) }}</td><td>{{ num(r.total_kg_h, 0) }}</td></tr>
+{% endfor %}
+</table></div>
+<p class="note">Plant boundary check: in (streams 1 + 9 + 10) = {{ num(mb["in"], 1) }} kg/h, out (2 + 7) = {{ num(mb["out"], 1) }} kg/h. Sodium in = {{ num(el.na_in, 4) }} mol/s, out = {{ num(el.na_out, 4) }} mol/s; carbon in = {{ num(el.c_in, 4) }} mol/s, out = {{ num(el.c_out, 4) }} mol/s.</p>
+
+<h2>3. Key results</h2>
+<div class="kpis">
+<div class="kpi"><div class="v">{{ num(p.co2_captured_t_h) }} t/h</div><div class="l">CO₂ captured</div></div>
+<div class="kpi"><div class="v">{{ num(a.diameter) }} m</div><div class="l">absorber diameter</div></div>
+<div class="kpi"><div class="v">{{ num(a.height, 1) }} m</div><div class="l">packed height (calculated)</div></div>
+<div class="kpi"><div class="v">{{ num(a.design_height, 1) }} m</div><div class="l">with {{ pct(cfg.packing.design_margin, 0) }} design margin</div></div>
+<div class="kpi"><div class="v">{{ num(p.naoh_per_t_co2) }} t</div><div class="l">NaOH per t CO₂</div></div>
+<div class="kpi"><div class="v">{{ num(p.decahydrate_t_h) }} t/h</div><div class="l">Na₂CO₃·10H₂O crystals</div></div>
+</div>
+<p><b>The chemistry consumes caustic.</b> Each tonne of CO₂ captured uses {{ num(p.naoh_per_t_co2) }} t of NaOH (the stoichiometric minimum is {{ num(p.naoh_min_per_t_co2) }} t; the rest leaves with the wet cake) and produces {{ num(p.soda_ash_equiv_t_h / p.co2_captured_t_h) }} t of soda-ash equivalent. The process only makes sense where the carbonate has a buyer, or where the NaOH comes from low-carbon electrolysis; it is not a route to bulk CO₂ storage.</p>
+
+<h2>4. Absorber design</h2>
+<h3>Diameter</h3>
+<div class="eq">u<sub>G</sub> = F / √ρ<sub>G</sub> &nbsp;·&nbsp; A = Q<sub>G</sub> / u<sub>G</sub> &nbsp;·&nbsp; D = √(4A/π)
+<div class="where">F = design gas capacity factor ({{ cfg.packing.design_f_factor }} Pa<sup>0.5</sup>); ρ<sub>G</sub> = gas density; Q<sub>G</sub> = gas volumetric flow; u<sub>G</sub> = superficial gas velocity; A = cross-section; D = diameter.</div></div>
+<div class="tbl"><table>
+<tr><th>Quantity</th><th>Value</th></tr>
+<tr><td>Gas density</td><td>{{ num(a.rho_g, 3) }} kg/m³</td></tr>
+<tr><td>Gas flow</td><td>{{ num(a.q_gas, 3) }} m³/s</td></tr>
+<tr><td>Superficial gas velocity</td><td>{{ num(a.u_g, 3) }} m/s</td></tr>
+<tr><td>Cross-section / diameter</td><td>{{ num(a.area, 3) }} m² / {{ num(a.diameter, 3) }} m</td></tr>
+<tr><td>Liquor circulation</td><td>{{ num(a.q_liq_m3h, 1) }} m³/h (L/G = {{ num(a.lg_mass_ratio, 2) }} kg/kg)</td></tr>
+<tr><td>Liquid loading vs. minimum wetting</td><td>{{ num(a.wetting, 1) }} vs {{ num(a.wetting_min, 1) }} m³/(m² h): {{ "adequate" if a.wetting_ok else "TOO LOW" }}</td></tr>
+<tr><td>Wetted area (Onda)</td><td>{{ num(a.a_w, 1) }} m²/m³ ({{ pct(a.a_w_frac, 0) }} of packing area)</td></tr>
+<tr><td>Gas-film coefficient k<sub>G</sub> (Onda)</td><td>{{ num(a.kG, 3) }} mol/(m² s Pa)</td></tr>
+</table></div>
+
+<h3>Height: rate-based integration</h3>
+<div class="eq">Z = ∫<sub>N<sub>out</sub></sub><sup>N<sub>in</sub></sup> dN / (K<sub>G</sub> p<sub>CO₂</sub> a<sub>w</sub> A) &nbsp;·&nbsp; 1/K<sub>G</sub> = 1/k<sub>G</sub> + H/(E k<sub>L</sub>) &nbsp;·&nbsp; E = Ha / tanh Ha &nbsp;·&nbsp; Ha = √(D<sub>CO₂</sub> k₂ c<sub>OH</sub>) / k<sub>L</sub>
+<div class="where">Z = packed height; N = CO₂ molar flow in the gas; p<sub>CO₂</sub> = CO₂ partial pressure; a<sub>w</sub> = wetted area; K<sub>G</sub> = overall gas-side coefficient; k<sub>G</sub>, k<sub>L</sub> = gas- and liquid-film coefficients (Onda); H = Henry's constant in the liquor; E = enhancement factor from the reaction; Ha = Hatta number; D<sub>CO₂</sub> = CO₂ diffusivity in the liquor; k₂ = second-order rate constant; c<sub>OH</sub> = hydroxide concentration. At each height the liquor composition comes from a balance with the column top, so hydroxide is depleted toward the bottom.</div></div>
+<figure><img src="{{ img.profiles }}" alt="Column profiles"><figcaption>CO₂ falls from {{ pct(a.y_in) }} to {{ pct(a.y_out, 2) }} in the gas while hydroxide in the liquor falls from the lean value to {{ num(a.oh_out_mol_L) }} mol/L at the bottom.</figcaption></figure>
+
+<h3>Property models</h3>
+<div class="eq">H = H<sub>w</sub> · 10<sup>Σ(h<sub>i</sub> + h<sub>G</sub>) c<sub>i</sub></sup>, &nbsp; H<sub>w</sub> = {{ sci(cfg.solubility.henry_A) }} · e<sup>−{{ cfg.solubility.henry_B }}/T</sup> Pa m³/mol
+<div class="where">H<sub>w</sub> = Henry's constant in water (Versteeg &amp; van Swaaij, 1988); h<sub>i</sub> = ion parameters, h<sub>G</sub> = gas parameter, c<sub>i</sub> = ion concentrations (Schumpe model, Weisenberger &amp; Schumpe, 1996); T = temperature in K.</div></div>
+<div class="eq">log<sub>10</sub> k₂ = {{ cfg.kinetics.pinsent_A }} − {{ cfg.kinetics.pinsent_B }}/T + {{ cfg.kinetics.ionic_c1 }} I − {{ cfg.kinetics.ionic_c2 }} I²  &nbsp;[L/(mol s)]
+<div class="where">k₂ = rate constant of CO₂ + OH⁻ (Pinsent et al., 1956) with the ionic-strength correction of Pohorecki &amp; Moniuk (1988); I = ½ Σ c<sub>i</sub> z<sub>i</sub>² is the ionic strength (c<sub>i</sub> in mol/L, z<sub>i</sub> = ion charge).</div></div>
+<div class="eq">D<sub>CO₂</sub> = {{ sci(cfg.solubility.diff_A) }} · e<sup>−{{ cfg.solubility.diff_B }}/T</sup> · (μ<sub>w</sub>/μ)<sup>{{ cfg.solubility.diffusivity_viscosity_exponent }}</sup> m²/s
+<div class="where">D<sub>CO₂</sub> = CO₂ diffusivity (Versteeg &amp; van Swaaij, 1988); μ<sub>w</sub>/μ = viscosity of water over viscosity of the liquor (fixed at 1/{{ cfg.solvent.viscosity_ratio_to_water }}).</div></div>
+
+<h3>Model validity checks</h3>
+<div class="tbl"><table>
+<tr><th class="l">Check</th><th>Result</th><th>Required</th><th>Status</th></tr>
+<tr><td class="l">Lowest Hatta number in the column (fast-reaction regime)</td><td>{{ num(a.ha_min, 1) }}</td><td>&gt; {{ cfg.report.min_hatta_for_fast_regime }}</td><td>{{ "met" if a.ha_min > cfg.report.min_hatta_for_fast_regime else "NOT MET" }}</td></tr>
+<tr><td class="l">Lowest E<sub>∞</sub>/Ha (pseudo-first-order assumption)</td><td>{{ num(a.einf_over_ha_min, 1) }}</td><td>&gt; {{ cfg.report.min_einf_over_ha }}</td><td>{{ "met" if a.einf_over_ha_min > cfg.report.min_einf_over_ha else "NOT MET" }}</td></tr>
+<tr><td class="l">Largest share of resistance in the gas film</td><td>{{ pct(a.gas_resistance_max) }}</td><td>—</td><td>liquid side controls</td></tr>
+<tr><td class="l">Liquid loading above minimum wetting rate</td><td>{{ num(a.wetting, 1) }}</td><td>&gt; {{ num(a.wetting_min, 1) }}</td><td>{{ "met" if a.wetting_ok else "NOT MET" }}</td></tr>
+</table></div>
+<p>{% if regime_ok %}The reaction stays in the fast pseudo-first-order regime everywhere in the column, so the enhancement-factor model used for the height is valid for this design.{% else %}<b>The pseudo-first-order assumption is not met everywhere in the column; the height result should not be relied on without a more rigorous enhancement-factor model.</b>{% endif %} The height integration is also unit-tested against the closed-form solution for a gas-film-controlled absorber (agreement within 0.001%).</p>
+
+<h2>5. Crystallizer and liquor loop</h2>
+<div class="eq">x = (n<sub>CO₃</sub> M<sub>Na₂CO₃</sub> − s W) / (M<sub>Na₂CO₃</sub> − 10 s M<sub>H₂O</sub>)
+<div class="where">x = decahydrate crystals formed (mol/s); n<sub>CO₃</sub> = carbonate entering (mol/s); W = water entering (kg/s); s = solubility at the crystallizer temperature (kg Na₂CO₃ per kg water); M = molar masses (kg/mol). This leaves the mother liquor exactly saturated.</div></div>
+<div class="tbl"><table>
+<tr><th>Quantity</th><th>Value</th></tr>
+<tr><td>Solubility used at {{ cfg.crystallizer.temperature_C }} °C</td><td>{{ num(lp.solubility * 100, 2) }} g Na₂CO₃ / 100 g water</td></tr>
+<tr><td>Carbonate in lean liquor (recycled)</td><td>{{ num(lp.lean.CO3 / lp.lean.W, 3) }} mol/kg water</td></tr>
+<tr><td>Crystals</td><td>{{ num(p.decahydrate_t_h) }} t/h decahydrate = {{ num(p.soda_ash_equiv_t_h) }} t/h soda-ash equivalent</td></tr>
+<tr><td>Mother liquor lost with wet cake</td><td>{{ pct(lp.phi, 2) }} of the mother liquor</td></tr>
+<tr><td>Makeup caustic / makeup water</td><td>{{ num(p.naoh_t_h) }} t/h NaOH (100% basis) / {{ num(p.makeup_water_t_h) }} t/h water</td></tr>
+<tr><td>Loop convergence</td><td>{{ lp.iterations }} fixed-point iterations</td></tr>
+</table></div>
+
+<h2>6. Energy balance</h2>
+<div class="tbl"><table>
+<tr><th class="l">Duty</th><th>MW</th><th class="l">Note</th></tr>
+<tr><td class="l">Heat of reaction released in absorber</td><td>{{ num(e.q_reaction / 1e6, 3) }}</td><td class="l">{{ num(-cfg.thermo.heat_of_reaction / 1000, 1) }} kJ per mol CO₂</td></tr>
+<tr><td class="l">Absorber pump-around cooler</td><td>{{ num(e.q_absorber_cooler / 1e6, 3) }}</td><td class="l">without it the liquor would heat up {{ num(e.adiabatic_rise, 1) }} K{% if e.rise_flag %} (above the {{ cfg.thermo.max_adiabatic_rise_K }} K limit, so the cooler is needed){% endif %}</td></tr>
+<tr><td class="l">Cross exchanger (heat recovered)</td><td>{{ num(e.q_cross_exchanger / 1e6, 3) }}</td><td class="l">lean heated to {{ num(e.t_lean_to_absorber, 1) }} °C; rich cooled to {{ num(e.t_rich_after_exchanger, 1) }} °C</td></tr>
+<tr><td class="l">Chiller / crystallizer cooling</td><td>{{ num(e.q_chiller / 1e6, 3) }}</td><td class="l">sensible cooling to {{ cfg.crystallizer.temperature_C }} °C plus heat of crystallization; needs refrigeration</td></tr>
+</table></div>
+
+<h2>7. Sensitivity study</h2>
+<p>Each chart changes one input with everything else at the base case (circled). Full tables are in <code>outputs/sensitivity_*.csv</code>.</p>
+<div class="grid2">
+{% for name, src in img.items() if name.startswith("sens_") %}<figure><img src="{{ src }}" alt="{{ name }}"></figure>{% endfor %}
+</div>
+<ul>
+<li>Packed height is lowest near {{ num(best_molality.value, 1) }} mol/kg NaOH ({{ num(best_molality.packed_height_m, 1) }} m). Weaker liquor slows the reaction and needs much more circulation; stronger liquor increases salting-out (lower CO₂ solubility). Viscosity is held fixed, so the high-concentration end is optimistic.</li>
+{% if trend_T == "down" %}<li>Warmer liquor shortens the column across the range tested: faster kinetics outweigh the lower CO₂ solubility.</li>{% elif trend_T == "up" %}<li>Warmer liquor lengthens the column across the range tested: lower CO₂ solubility outweighs faster kinetics.</li>{% endif %}
+{% if trend_cryst == "up" %}<li>A warmer crystallizer leaves more carbonate in the recycled liquor, raising ionic strength and salting-out, so the absorber gets taller.</li>{% endif %}
+</ul>
+
+<h2>8. References</h2>
+<ul class="note">
+<li>Pinsent, B.R.W., Pearson, L., Roughton, F.J.W. (1956). The kinetics of combination of carbon dioxide with hydroxide ions. <i>Trans. Faraday Soc.</i> 52, 1512–1520.</li>
+<li>Pohorecki, R., Moniuk, W. (1988). Kinetics of reaction between carbon dioxide and hydroxyl ions in aqueous electrolyte solutions. <i>Chem. Eng. Sci.</i> 43, 1677–1684.</li>
+<li>Versteeg, G.F., van Swaaij, W.P.M. (1988). Solubility and diffusivity of acid gases (CO₂, N₂O) in aqueous alkanolamine solutions. <i>J. Chem. Eng. Data</i> 33, 29–34.</li>
+<li>Weisenberger, S., Schumpe, A. (1996). Estimation of gas solubilities in salt solutions at temperatures from 273 K to 363 K. <i>AIChE J.</i> 42, 298–300.</li>
+<li>Onda, K., Takeuchi, H., Okumoto, Y. (1968). Mass transfer coefficients between gas and liquid phases in packed columns. <i>J. Chem. Eng. Japan</i> 1, 56–62.</li>
+</ul>
+<p class="note">Constants were entered from these sources and checked against textbook values in the unit tests (for example k₂ ≈ 8,400 L/(mol s) and H ≈ 2,970 Pa m³/mol at 25 °C). They should still be checked against the original papers before the numbers are used for anything beyond a study.</p>
+</main>
+</body>
+</html>
